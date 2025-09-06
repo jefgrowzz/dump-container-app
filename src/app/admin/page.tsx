@@ -23,17 +23,24 @@
   import UsersTable from "@/components/admin/UsersTable";
   import ContainersTable from "@/components/admin/ContainersTable";
   import OrdersTable from "@/components/admin/OrdersTable";
+  import EditContainerModal from "@/components/admin/EditContainerModal";
+  import EditUserModal from "@/components/admin/EditUserModal";
+  import AddUserModal from "@/components/admin/AddUserModal";
 
   // ----------------- Types -----------------
   type View = "dashboard" | "users" | "containers" | "orders";
 
   type User = {
     id: string;
-    name?: string;
     email: string;
-    role?: "admin" | "user" | "moderator";
-    status?: "active" | "inactive";
-    lastActive?: string;
+    name?: string;
+    role: "admin" | "user" | "moderator";
+    status: "active" | "inactive";
+    last_active?: string;
+    created_at?: string;
+    updated_at?: string;
+    phone?: string;
+    address?: string;
   };
 
   type Container = {
@@ -52,11 +59,27 @@
 
   type Order = {
     id: string;
-    customer?: string;
-    container?: string;
-    status?: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
-    total?: number;
-    date?: string;
+    user_id: string;
+    container_id: string;
+    type: "rent" | "buy";
+    start_date: string;
+    end_date?: string;
+    total_price: number;
+    status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled" | "completed";
+    created_at?: string;
+    updated_at?: string;
+    container?: {
+      id: string;
+      title: string;
+      size?: string;
+      location?: string;
+      price: number;
+    };
+    user?: {
+      id: string;
+      email: string;
+      name?: string;
+    };
   };
 
   // ----------------- Main Component -----------------
@@ -83,6 +106,15 @@
 
     // local form state for editing to avoid mutating global lists directly
     const [editForm, setEditForm] = useState<any>({});
+
+    // New container edit modal state
+    const [containerEditModalOpen, setContainerEditModalOpen] = useState(false);
+    const [editingContainer, setEditingContainer] = useState<Container | null>(null);
+
+    // User modal state
+    const [userEditModalOpen, setUserEditModalOpen] = useState(false);
+    const [userAddModalOpen, setUserAddModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
 
     // ---------- Auth & Role Check (runs once) ----------
     useEffect(() => {
@@ -132,8 +164,20 @@
     // ---------- Data fetching ----------
     const fetchUsers = async () => {
       try {
-        const { data, error } = await supabase.from<User>("profiles").select("*");
-        if (error) throw error;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.error("No session found");
+          return;
+        }
+
+        const res = await fetch("/api/admin/users", {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to fetch users");
         setUsers(data || []);
       } catch (err) {
         console.error("fetchUsers error:", err);
@@ -152,8 +196,20 @@
 
     const fetchOrders = async () => {
       try {
-        const { data, error } = await supabase.from<Order>("orders").select("*");
-        if (error) throw error;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.error("No session found");
+          return;
+        }
+
+        const res = await fetch("/api/admin/orders", {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to fetch orders");
         setOrders(data || []);
       } catch (err) {
         console.error("fetchOrders error:", err);
@@ -242,14 +298,43 @@ const addContainer = async (payloadOrRow: any) => {
 const updateContainer = async (id: string, payload: Partial<Container>) => {
   setOpLoading(true);
   try {
+    // Validate ID
+    if (!id || id === 'undefined' || id === 'null') {
+      throw new Error("Invalid container ID");
+    }
+
+    // Get session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No session found");
+    }
+
+    // Clean the payload - remove undefined values
+    const cleanPayload = Object.fromEntries(
+      Object.entries(payload).filter(([_, value]) => value !== undefined)
+    );
+
+    console.log("Updating container:", { id, cleanPayload });
+
     const res = await fetch(`/api/containers/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(cleanPayload),
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to update container");
+    
+    if (!res.ok) {
+      console.error("API Error:", data);
+      throw new Error(data.error || `Failed to update container: ${res.status}`);
+    }
+
+    if (!data || !data.id) {
+      throw new Error("Invalid response from server");
+    }
 
     setContainers((prev) => prev.map((c) => (String(c.id) === String(id) ? data : c)));
     return data;
@@ -264,7 +349,18 @@ const updateContainer = async (id: string, payload: Partial<Container>) => {
 const deleteContainer = async (id: string) => {
   setOpLoading(true);
   try {
-    const res = await fetch(`/api/containers/${id}`, { method: "DELETE" });
+    // Get session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No session found");
+    }
+
+    const res = await fetch(`/api/containers/${id}`, { 
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${session.access_token}`
+      }
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to delete container");
 
@@ -278,13 +374,84 @@ const deleteContainer = async (id: string) => {
   }
 };
 
+const toggleContainerAvailability = async (id: string, isAvailable: boolean) => {
+  setOpLoading(true);
+  try {
+    // Get session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No session found");
+    }
+
+    const res = await fetch(`/api/containers/${id}`, {
+      method: "PUT",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ is_available: isAvailable }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to toggle container availability");
+
+    setContainers((prev) => 
+      prev.map((c) => 
+        String(c.id) === String(id) 
+          ? { ...c, is_available: isAvailable }
+          : c
+      )
+    );
+    return data;
+  } catch (err) {
+    console.error("toggleContainerAvailability error:", err);
+    throw err;
+  } finally {
+    setOpLoading(false);
+  }
+};
+
 // ---------- Users ----------
+const addUser = async (userData: any) => {
+  setOpLoading(true);
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("No session found");
+
+    const res = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(userData),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to create user");
+
+    setUsers((prev) => [data, ...prev]);
+    return data;
+  } catch (err) {
+    console.error("addUser error:", err);
+    throw err;
+  } finally {
+    setOpLoading(false);
+  }
+};
+
 const updateUser = async (id: string, payload: Partial<User>) => {
   setOpLoading(true);
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("No session found");
+
     const res = await fetch(`/api/users/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        'Authorization': `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify(payload),
     });
 
@@ -304,7 +471,15 @@ const updateUser = async (id: string, payload: Partial<User>) => {
 const deleteUser = async (id: string) => {
   setOpLoading(true);
   try {
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("No session found");
+
+    const res = await fetch(`/api/users/${id}`, { 
+      method: "DELETE",
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to delete user");
 
@@ -318,13 +493,35 @@ const deleteUser = async (id: string) => {
   }
 };
 
+const toggleUserStatus = async (user: User) => {
+  setOpLoading(true);
+  try {
+    const newStatus = user.status === "active" ? "inactive" : "active";
+    await updateUser(String(user.id), { status: newStatus });
+  } catch (err) {
+    console.error("toggleUserStatus error:", err);
+    throw err;
+  } finally {
+    setOpLoading(false);
+  }
+};
+
 // ---------- Orders ----------
 const updateOrder = async (id: string, payload: Partial<Order>) => {
   setOpLoading(true);
   try {
+    // Get session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No session found");
+    }
+
     const res = await fetch(`/api/orders/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`
+      },
       body: JSON.stringify(payload),
     });
 
@@ -344,7 +541,18 @@ const updateOrder = async (id: string, payload: Partial<Order>) => {
 const deleteOrder = async (id: string) => {
   setOpLoading(true);
   try {
-    const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    // Get session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error("No session found");
+    }
+
+    const res = await fetch(`/api/orders/${id}`, { 
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${session.access_token}`
+      }
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to delete order");
 
@@ -375,6 +583,68 @@ const deleteOrder = async (id: string) => {
       setEditModalType(null);
       setEditingItem(null);
       setEditForm({});
+    };
+
+    // Container edit modal handlers
+    const openContainerEditModal = (container: Container) => {
+      setEditingContainer(container);
+      setContainerEditModalOpen(true);
+    };
+
+    const closeContainerEditModal = () => {
+      setContainerEditModalOpen(false);
+      setEditingContainer(null);
+    };
+
+    const handleContainerSave = async (updatedContainer: Container) => {
+      try {
+        console.log("Saving container:", updatedContainer);
+        await updateContainer(String(updatedContainer.id), updatedContainer);
+        closeContainerEditModal();
+        // You could add a success toast here
+        console.log("Container saved successfully");
+      } catch (err: any) {
+        console.error("Container save failed:", err);
+        // You could add an error toast here
+        alert(`Failed to save container: ${err.message || 'Unknown error'}`);
+      }
+    };
+
+    // User modal handlers
+    const openUserEditModal = (user: User) => {
+      setEditingUser(user);
+      setUserEditModalOpen(true);
+    };
+
+    const closeUserEditModal = () => {
+      setUserEditModalOpen(false);
+      setEditingUser(null);
+    };
+
+    const openUserAddModal = () => {
+      setUserAddModalOpen(true);
+    };
+
+    const closeUserAddModal = () => {
+      setUserAddModalOpen(false);
+    };
+
+    const handleUserSave = async (updatedUser: User) => {
+      try {
+        await updateUser(String(updatedUser.id), updatedUser);
+        closeUserEditModal();
+      } catch (err) {
+        console.error("User save failed:", err);
+      }
+    };
+
+    const handleUserAdd = async (userData: any) => {
+      try {
+        await addUser(userData);
+        closeUserAddModal();
+      } catch (err) {
+        console.error("User add failed:", err);
+      }
     };
 
     // ---------- handle save from modal ----------
@@ -580,10 +850,11 @@ const deleteOrder = async (id: string) => {
               <div className="p-6">
                 <UsersTable
                   users={users}
-                  openEditModal={(u) => openEditModal("user", u)}
-                  onDelete={async (id) => {
-                    await deleteUser(id);
-                  }}
+                  onEdit={openUserEditModal}
+                  onDelete={async (user) => await deleteUser(String(user.id))}
+                  onView={openUserEditModal}
+                  onAdd={openUserAddModal}
+                  onToggleStatus={async (user) => await toggleUserStatus(user)}
                 />
               </div>
             </div>
@@ -601,9 +872,10 @@ const deleteOrder = async (id: string) => {
               <div className="p-6">
                 <ContainersTable
                   containers={containers}
-                  openEditModal={(c) => openEditModal("container", c)}
+                  openEditModal={openContainerEditModal}
                   onAdd={async (payload) => await addContainer(payload)}
                   onDelete={async (id) => await deleteContainer(id)}
+                  onToggleAvailability={async (id, isAvailable) => await toggleContainerAvailability(id, isAvailable)}
                 />
               </div>
             </div>
@@ -621,9 +893,10 @@ const deleteOrder = async (id: string) => {
               <div className="p-6">
                 <OrdersTable
                   orders={orders}
-                  openEditModal={(o) => openEditModal("order", o)}
+                  onEdit={(o) => openEditModal("order", o)}
+                  onView={(o) => openEditModal("order", o)}
+                  onDelete={async (o) => await deleteOrder(String(o.id))}
                   onUpdateStatus={async (id, status) => await updateOrder(id, { status })}
-                  onDelete={async (id) => await deleteOrder(id)}
                 />
               </div>
             </div>
@@ -813,100 +1086,88 @@ const deleteOrder = async (id: string) => {
                 </div>
               )}
 
-              {editModalType === "container" && (
+
+              {editModalType === "order" && (
                 <div className="space-y-4">
-                  <label className="block text-sm text-gray-300">Name</label>
-                  <input
-                    value={editForm.name || ""}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, name: e.target.value }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-300">Customer</label>
+                      <input
+                        value={editForm.user?.name || editForm.customer || ""}
+                        disabled
+                        className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100 opacity-50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300">Container</label>
+                      <input
+                        value={editForm.container?.title || ""}
+                        disabled
+                        className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100 opacity-50"
+                      />
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm text-gray-300">Type</label>
+                      <select
+                        value={editForm.type || "buy"}
+                        disabled
+                        className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100 opacity-50"
+                      >
+                        <option value="buy">Purchase</option>
+                        <option value="rent">Rental</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300">Status</label>
+                      <select
+                        value={editForm.status || "pending"}
+                        onChange={(e) => setEditForm((s: any) => ({ ...s, status: e.target.value }))}
+                        className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-300">Start Date</label>
                       <input
-                        value={editForm.type || ""}
-                        onChange={(e) => setEditForm((s: any) => ({ ...s, type: e.target.value }))}
+                        type="date"
+                        value={editForm.start_date || ""}
+                        onChange={(e) => setEditForm((s: any) => ({ ...s, start_date: e.target.value }))}
                         className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-300">Price</label>
+                      <label className="block text-sm text-gray-300">End Date</label>
                       <input
-                        type="number"
-                        value={editForm.price ?? ""}
-                        onChange={(e) => setEditForm((s: any) => ({ ...s, price: Number(e.target.value) }))}
+                        type="date"
+                        value={editForm.end_date || ""}
+                        onChange={(e) => setEditForm((s: any) => ({ ...s, end_date: e.target.value }))}
                         className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
                       />
                     </div>
                   </div>
 
-                  <label className="block text-sm text-gray-300">Available</label>
-                  <select
-                    value={String(editForm.available ?? "true")}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, available: e.target.value === "true" }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  >
-                    <option value="true">Available</option>
-                    <option value="false">Unavailable</option>
-                  </select>
-
-                  <label className="block text-sm text-gray-300">Location</label>
-                  <input
-                    value={editForm.location || ""}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, location: e.target.value }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  />
-
-                  <label className="block text-sm text-gray-300">Description</label>
-                  <textarea
-                    value={editForm.description || ""}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, description: e.target.value }))}
-                    rows={3}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  />
-
-                  <div className="flex justify-end space-x-3 mt-4">
-                    <Button variant="outline" onClick={closeEditModal} className="border-gray-600 text-gray-300">
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSave} className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-                      Save Changes
-                    </Button>
+                  <div>
+                    <label className="block text-sm text-gray-300">Total Price</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.total_price ?? ""}
+                      onChange={(e) => setEditForm((s: any) => ({ ...s, total_price: Number(e.target.value) }))}
+                      className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
+                    />
                   </div>
-                </div>
-              )}
-
-              {editModalType === "order" && (
-                <div className="space-y-4">
-                  <label className="block text-sm text-gray-300">Customer</label>
-                  <input
-                    value={editForm.customer || ""}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, customer: e.target.value }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  />
-
-                  <label className="block text-sm text-gray-300">Status</label>
-                  <select
-                    value={editForm.status || "pending"}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, status: e.target.value }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="shipped">Shipped</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-
-                  <label className="block text-sm text-gray-300">Total</label>
-                  <input
-                    type="number"
-                    value={editForm.total ?? ""}
-                    onChange={(e) => setEditForm((s: any) => ({ ...s, total: Number(e.target.value) }))}
-                    className="w-full p-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-100"
-                  />
 
                   <div className="flex justify-end space-x-3 mt-4">
                     <Button variant="outline" onClick={closeEditModal} className="border-gray-600 text-gray-300">
@@ -921,6 +1182,32 @@ const deleteOrder = async (id: string) => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Container Edit Modal */}
+        <EditContainerModal
+          open={containerEditModalOpen}
+          onOpenChange={setContainerEditModalOpen}
+          container={editingContainer}
+          onSave={handleContainerSave}
+          loading={opLoading}
+        />
+
+        {/* User Edit Modal */}
+        <EditUserModal
+          open={userEditModalOpen}
+          onOpenChange={setUserEditModalOpen}
+          user={editingUser}
+          onSave={handleUserSave}
+          loading={opLoading}
+        />
+
+        {/* User Add Modal */}
+        <AddUserModal
+          open={userAddModalOpen}
+          onOpenChange={setUserAddModalOpen}
+          onSave={handleUserAdd}
+          loading={opLoading}
+        />
       </div>
     );
   }

@@ -1,17 +1,32 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import ContainerList from "@/components/containers/ContainerList";
 import ContainerFilters from "@/components/containers/ContainerFilters";
 import ContainerDetailsModal from "@/components/containers/ContainerDetailModal";
 import BookingForm from "@/components/containers/BookingForm";
+import PaymentSuccess from "@/components/containers/PaymentSuccess";
 import SuccessPage from "@/components/containers/SuccessPage";
 import Head from "next/head";
 
 export default function ContainersPage() {
+  const searchParams = useSearchParams();
   const [selectedContainer, setSelectedContainer] = useState(null);
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
+
+  // Check for payment success/cancellation in URL params
+  useEffect(() => {
+    const payment = searchParams.get('payment');
+    if (payment === 'success') {
+      setShowPaymentSuccess(true);
+    } else if (payment === 'cancelled') {
+      // Handle cancellation if needed
+      console.log('Payment was cancelled');
+    }
+  }, [searchParams]);
 
   // Example state for filters (assuming ContainerFilters supports input/output)
   const [filters, setFilters] = useState({
@@ -48,96 +63,71 @@ export default function ContainersPage() {
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-gray-800 text-gray-200">
         {/* Navbar - Consider using a <header><nav> structure for semantics */}
         <header aria-label="Primary Navigation" className="fixed top-0 left-0 right-0 z-50 bg-gray-900/90 backdrop-blur-xl border-b border-gray-700/50 shadow-lg">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <a href="/" aria-label="ContainerApp Home" className="text-2xl font-bold text-white focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-green-400">
-                ContainerApp
-              </a>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center">
+                <h1 className="text-xl font-bold text-white">ContainerApp</h1>
+              </div>
+              <nav className="hidden md:flex space-x-8">
+                <a href="/" className="text-gray-300 hover:text-white transition-colors">Home</a>
+                <a href="/containers" className="text-white font-medium">Containers</a>
+                <a href="/about" className="text-gray-300 hover:text-white transition-colors">About</a>
+                <a href="/contact" className="text-gray-300 hover:text-white transition-colors">Contact</a>
+              </nav>
             </div>
-            <nav aria-label="Primary" className="flex items-center space-x-6">
-              <a href="/" className="text-gray-300 hover:text-white transition focus:outline-focus-ring">Home</a>
-              <a href="/inventory" aria-current="page" className="text-white font-semibold underline">
-                Inventory
-              </a>
-              <a href="/bookings" className="text-gray-300 hover:text-white transition focus:outline-focus-ring">Bookings</a>
-              <a href="/contact" className="text-gray-300 hover:text-white transition focus:outline-focus-ring">Contact</a>
-            </nav>
           </div>
         </header>
 
-        {/* Animated Background Elements */}
-        <div aria-hidden="true" className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl animate-pulse delay-500"></div>
-        </div>
-
-        {/* Main content */}
-        <main className="relative z-10 pt-24 max-w-7xl mx-auto px-6" role="main">
-          {/* Page introduction for SEO and users */}
-          <section className="mb-8">
-            <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2">
-              Available Shipping & Storage Containers
-            </h1>
-            <p className="text-gray-400 text-lg max-w-3xl">
-              Browse through our extensive container inventory to find the perfect option for storage, shipping, or custom needs. Filter by size, location, availability, and price.
-            </p>
-          </section>
-
-          {/* Filters Section */}
-          <section aria-label="Container Filters" className="mb-8 bg-gray-800/70 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-              </div>
-              <h2 className="text-xl font-semibold text-white">
-                Filter & Search Containers
-              </h2>
+        {/* Main Content */}
+        <main className="pt-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {/* Page Header */}
+            <div className="text-center mb-12">
+              <h1 className="text-4xl font-bold text-white mb-4">
+                Available Containers
+              </h1>
+              <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+                Find the perfect container for your needs. Filter by location, size, and availability.
+              </p>
             </div>
-            <ContainerFilters filters={filters} onChange={setFilters} />
-          </section>
 
-          {/* Inventory list with improved section landmark and aria-label */}
-          <section aria-label="Container Inventory" className="bg-gray-800/30 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden">
-            <header className="p-6 border-b border-gray-700/50 flex justify-between items-center">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-semibold text-white">Container Inventory</h2>
-              </div>
-              <div className="flex items-center space-x-2 text-gray-400 text-sm" aria-live="polite">
-                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                <span>Updated in real-time</span>
-              </div>
-            </header>
-
-            <div className="p-6">
-              {/* Pass filters as props for filtering in ContainerList */}
-              <ContainerList filters={filteredContainersProps} onSelect={setSelectedContainer} />
+            {/* Filters Section */}
+            <div className="mb-8">
+              <ContainerFilters
+                filters={filters}
+                onFiltersChange={setFilters}
+              />
             </div>
-          </section>
+
+            {/* Container List */}
+            <ContainerList
+              onContainerSelect={setSelectedContainer}
+              onBookContainer={(container) => {
+                setSelectedContainer(container);
+                setIsBooking(true);
+              }}
+              filters={filteredContainersProps}
+            />
+          </div>
         </main>
 
-        {/* Details Modal with accessible roles and aria labels */}
-        {selectedContainer && !isBooking && (
+        {/* Container Details Modal */}
+        {selectedContainer && !isBooking && !bookingSuccess && (
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={`Container details for ${selectedContainer.title}`}
+            aria-label="Container Details"
             tabIndex={-1}
             className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           >
-            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-auto focus:outline-none">
-              <ContainerDetailsModal
-                container={selectedContainer}
-                onClose={() => setSelectedContainer(null)}
-                onBook={() => setIsBooking(true)}
-              />
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl w-full max-w-4xl transform transition-all duration-300 scale-100">
+              <div className="p-8">
+                <ContainerDetailsModal
+                  container={selectedContainer}
+                  onClose={() => setSelectedContainer(null)}
+                  onBook={() => setIsBooking(true)}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -175,6 +165,29 @@ export default function ContainersPage() {
           </div>
         )}
 
+        {/* Payment Success Modal */}
+        {showPaymentSuccess && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Payment Success"
+            tabIndex={-1}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          >
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl w-full max-w-lg transform transition-all duration-300 scale-100">
+              <div className="p-8">
+                <PaymentSuccess
+                  onClose={() => {
+                    setShowPaymentSuccess(false);
+                    // Clean up URL params
+                    window.history.replaceState({}, '', '/containers');
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Success Page modal */}
         {bookingSuccess && (
           <div
@@ -184,8 +197,12 @@ export default function ContainersPage() {
             tabIndex={-1}
             className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           >
-            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl max-w-md w-full">
-              <SuccessPage onClose={() => setBookingSuccess(false)} />
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl w-full max-w-lg transform transition-all duration-300 scale-100">
+              <div className="p-8">
+                <SuccessPage
+                  onClose={() => setBookingSuccess(false)}
+                />
+              </div>
             </div>
           </div>
         )}

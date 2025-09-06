@@ -2,8 +2,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 interface Container {
   id: string;
@@ -19,7 +19,13 @@ interface Container {
   created_at?: string;
 }
 
-export default function ContainerList() {
+interface ContainerListProps {
+  onContainerSelect?: (container: Container) => void;
+  onBookContainer?: (container: Container) => void;
+  filters?: any;
+}
+
+export default function ContainerList({ onContainerSelect, onBookContainer, filters }: ContainerListProps) {
   const [containers, setContainers] = useState<Container[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -158,6 +164,15 @@ export default function ContainerList() {
     };
   }, []);
 
+  const handleBookContainer = (container: Container) => {
+    if (onBookContainer) {
+      onBookContainer(container);
+    } else {
+      // Fallback: navigate to booking page
+      router.push(`/booking/${container.id}`);
+    }
+  };
+
   if (loading) return <p className="text-center py-6">Loading containers...</p>;
   if (containers.length === 0) return <p className="text-center py-6">No containers available at the moment.</p>;
 
@@ -181,12 +196,16 @@ export default function ContainerList() {
               <img
                 src={container.image_url}
                 alt={container.title ?? "Container image"}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover cursor-pointer"
                 loading="lazy"
                 draggable={false}
+                onClick={() => onContainerSelect?.(container)}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-400 text-lg font-semibold">
+              <div 
+                className="flex items-center justify-center h-full text-gray-400 text-lg font-semibold cursor-pointer"
+                onClick={() => onContainerSelect?.(container)}
+              >
                 No Image
               </div>
             )}
@@ -195,7 +214,12 @@ export default function ContainerList() {
           {/* Info section */}
           <div className="flex-1 p-6 flex flex-col justify-between">
             <div>
-              <h3 className="text-2xl font-bold text-white truncate">{container.title ?? "Untitled"}</h3>
+              <h3 
+                className="text-2xl font-bold text-white truncate cursor-pointer hover:text-blue-400 transition-colors"
+                onClick={() => onContainerSelect?.(container)}
+              >
+                {container.title ?? "Untitled"}
+              </h3>
               <p className="mt-2 text-gray-300 text-base line-clamp-3 min-h-[3.6em]">{container.description ?? "No description provided."}</p>
 
               {/* Info grid */}
@@ -236,13 +260,25 @@ export default function ContainerList() {
               </div>
             </div>
 
-            {/* Bookings button */}
-            <div className="mt-8">
+            {/* Action buttons */}
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
               <button
-                onClick={() => router.push(`/bookings?containerId=${encodeURIComponent(container.id)}`)}
+                onClick={() => onContainerSelect?.(container)}
+                className="
+                  w-full sm:w-auto px-6 py-3 rounded-full font-semibold text-lg 
+                  bg-gray-600 hover:bg-gray-700 text-white
+                  transition-colors duration-300
+                "
+                aria-label={`View details for container ${container.title ?? "Untitled"}`}
+              >
+                View Details
+              </button>
+              
+              <button
+                onClick={() => handleBookContainer(container)}
                 disabled={!container.available}
                 className={`
-                  w-full md:w-auto px-6 py-3 rounded-full font-semibold text-lg 
+                  w-full sm:w-auto px-6 py-3 rounded-full font-semibold text-lg 
                   transition-colors duration-300 
                   ${container.available 
                     ? "bg-blue-600 hover:bg-blue-700 text-white" 
@@ -250,7 +286,7 @@ export default function ContainerList() {
                 `}
                 aria-label={`Book container ${container.title ?? "Untitled"}`}
               >
-                {container.available ? "Book Now" : "Unavailable"}
+                {container.available ? "Book with Add-ons" : "Unavailable"}
               </button>
             </div>
           </div>

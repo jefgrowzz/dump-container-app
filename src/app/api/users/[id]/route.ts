@@ -1,7 +1,8 @@
-// src/app/api/containers/[id]/route.ts
+// src/app/api/users/[id]/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { supabaseAdmin } from "@/lib/supabaseAdminClient";
-import { NextRequest, NextResponse } from "next/server";
+import type { UserUpdateRequest } from "@/types/user";
 
 export async function PUT(
   request: NextRequest,
@@ -9,7 +10,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body: UserUpdateRequest = await request.json();
 
     // Get authorization header
     const authHeader = request.headers.get('authorization');
@@ -19,10 +20,9 @@ export async function PUT(
 
     const token = authHeader.split(' ')[1];
     
-    // Get the user session to verify admin role
+    // Get current user for authorization
     const supabase = createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
     if (userError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -38,63 +38,31 @@ export async function PUT(
       return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
     }
 
-    // Extract fields from request body
-    const {
-      title,
-      description,
-      size,
-      location,
-      address,
-      available_date,
-      price,
-      is_available,
-      image_url
-    } = body;
-
     // Build update object with only provided fields
     const updateData: any = {};
-    if (title !== undefined) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (size !== undefined) updateData.size = size;
-    if (location !== undefined) updateData.location = location;
-    if (address !== undefined) updateData.address = address;
-    if (available_date !== undefined) updateData.available_date = available_date;
-    if (price !== undefined) updateData.price = price;
-    if (is_available !== undefined) updateData.is_available = is_available;
-    if (image_url !== undefined) updateData.image_url = image_url;
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.email !== undefined) updateData.email = body.email;
+    if (body.role !== undefined) updateData.role = body.role;
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.address !== undefined) updateData.address = body.address;
 
-    // First, check if the container exists using admin client
-    const { data: existingContainer, error: checkError } = await supabaseAdmin
-      .from("containers")
-      .select("id")
-      .eq("id", id)
-      .single();
-
-    if (checkError || !existingContainer) {
-      return NextResponse.json({ error: "Container not found" }, { status: 404 });
-    }
-
-    // Update the container using admin client (bypasses RLS)
     const { data, error } = await supabaseAdmin
-      .from("containers")
+      .from("profiles")
       .update(updateData)
       .eq("id", id)
       .select()
       .single();
 
     if (error) {
-      console.error("Error updating container:", error.message);
+      console.error("Error updating user:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (!data) {
-      return NextResponse.json({ error: "No container was updated" }, { status: 404 });
     }
 
     return NextResponse.json(data, { status: 200 });
   } catch (err: any) {
     console.error("Unexpected update error:", err);
-    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
@@ -113,10 +81,9 @@ export async function DELETE(
 
     const token = authHeader.split(' ')[1];
     
-    // Get the user session to verify admin role
+    // Get current user for authorization
     const supabase = createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
     if (userError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -132,31 +99,32 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
     }
 
-    // First, check if the container exists using admin client
-    const { data: existingContainer, error: checkError } = await supabaseAdmin
-      .from("containers")
-      .select("id")
-      .eq("id", id)
-      .single();
-
-    if (checkError || !existingContainer) {
-      return NextResponse.json({ error: "Container not found" }, { status: 404 });
+    // Prevent admin from deleting themselves
+    if (id === user.id) {
+      return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
     }
 
-    // Delete the container using admin client (bypasses RLS)
-    const { error } = await supabaseAdmin
-      .from("containers")
+    // Delete from auth first
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
+    if (authError) {
+      console.error("Error deleting user from auth:", authError);
+      return NextResponse.json({ error: authError.message }, { status: 500 });
+    }
+
+    // Delete from profiles table
+    const { error: profileError2 } = await supabaseAdmin
+      .from("profiles")
       .delete()
       .eq("id", id);
 
-    if (error) {
-      console.error("Error deleting container:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (profileError2) {
+      console.error("Error deleting user profile:", profileError2);
+      return NextResponse.json({ error: profileError2.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err: any) {
     console.error("Unexpected delete error:", err);
-    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

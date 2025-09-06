@@ -9,9 +9,10 @@ type Props = {
   openEditModal: (container: Container) => void;
   onAdd: (container: Partial<Container>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onToggleAvailability?: (id: string, isAvailable: boolean) => Promise<void>;
 };
 
-export default function ContainersTable({ containers, openEditModal, onAdd, onDelete }: Props) {
+export default function ContainersTable({ containers, openEditModal, onAdd, onDelete, onToggleAvailability }: Props) {
   // Adapter for AddContainerForm which expects an `onAdded(container)` callback
   const handleAddedFromForm = async (inserted: any) => {
     // If parent passed an onAdd that expects a payload, call it.
@@ -53,7 +54,32 @@ export default function ContainersTable({ containers, openEditModal, onAdd, onDe
                 <td className="p-3">{title}</td>
                 <td className="p-3">{type}</td>
                 <td className="p-3">{price}</td>
-                <td className="p-3">{available ? "Yes" : "No"}</td>
+                <td className="p-3">
+                  <div className="flex items-center space-x-2">
+                    <span className={available ? "text-green-400" : "text-red-400"}>
+                      {available ? "Yes" : "No"}
+                    </span>
+                    {onToggleAvailability && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (!id) return;
+                          onToggleAvailability(String(id), !available).catch((err) => 
+                            console.error("toggle availability failed:", err)
+                          );
+                        }}
+                        className={`text-xs ${
+                          available 
+                            ? "bg-red-100 hover:bg-red-200 text-red-700 border-red-300" 
+                            : "bg-green-100 hover:bg-green-200 text-green-700 border-green-300"
+                        }`}
+                      >
+                        {available ? "Mark Unavailable" : "Mark Available"}
+                      </Button>
+                    )}
+                  </div>
+                </td>
                 <td className="p-3 space-x-2">
                   <Button
                     size="sm"
